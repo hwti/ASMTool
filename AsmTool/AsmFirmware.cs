@@ -17,7 +17,8 @@ namespace AsmTool
 {
 	public enum AsmFirmwareChipType : byte {
 		Asm2142 = 0x50,
-		Asm3142 = 0x70
+		Asm3142 = 0x70,
+		Asm3242 = 0x83
 	}
 
 	public class AsmFirmware : IDisposable
@@ -28,6 +29,7 @@ namespace AsmTool
 
 		private const string MAGIC_GEN1 = "2114A_RCFG";
 		private const string MAGIC_GEN2 = "2214A_RCFG";
+		private const string MAGIC_GEN2x2 = "2324A_RCFG";
 
 		private Span<byte> Span {
 			get {
@@ -48,7 +50,7 @@ namespace AsmTool
 		}
 
 		public void SetChipType(AsmFirmwareChipType type) {
-			Span[0xBC] = (byte)type;
+			Span[GetFirmwareVersionOffset() + 3] = (byte)type;
 			UpdateChecksum();
 		}
 
@@ -62,8 +64,21 @@ namespace AsmTool
 			}
 		}
 
+		private int GetFirmwareVersionOffset() {
+			string magic = ReadStringSignature();
+			switch(magic) {
+				case MAGIC_GEN1:
+				case MAGIC_GEN2:
+					return 0xB9;
+				case MAGIC_GEN2x2:
+					return 0xC9;
+				default:
+					throw new InvalidDataException($"Unexpected magic \"{magic}\"");
+			}
+		}
+
 		private byte[] GetFirmwareVersion() {
-			var fwVer = stream.PerformAt(0xB9, () => {
+			var fwVer = stream.PerformAt(GetFirmwareVersionOffset(), () => {
 				return stream.ReadBytes(6);
 			});
 			return fwVer;
@@ -74,6 +89,7 @@ namespace AsmTool
 			switch (fwVer[3]) {
 				case 0x50: return AsmFirmwareChipType.Asm2142;
 				case 0x70: return AsmFirmwareChipType.Asm3142;
+				case 0x83: return AsmFirmwareChipType.Asm3242;
 				default: throw new InvalidDataException($"Unknown chip id {fwVer[3]:X2}");
 			}
 		}
@@ -92,7 +108,7 @@ namespace AsmTool
 		}
 
 		private string GetFirmwareName() {
-			var fwChipName = stream.PerformAt(0xB9 + 7, () => {
+			var fwChipName = stream.PerformAt(GetFirmwareVersionOffset() + 7, () => {
 				return stream.ReadCString(Encoding.ASCII);
 			});
 			return fwChipName;
@@ -221,6 +237,7 @@ namespace AsmTool
 			var fwChipName = fwChipType switch {
 				AsmFirmwareChipType.Asm2142 => "ASM2142",
 				AsmFirmwareChipType.Asm3142 => "ASM3142",
+				AsmFirmwareChipType.Asm3242 => "ASM3242",
 				_ => "Unknown"
 			};
 			os.WriteLine($"Footer: " + ReadFooterSignature());
